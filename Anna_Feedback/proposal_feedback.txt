@@ -1,0 +1,24 @@
+You will need to email me when you have changed your survey for me to post on Piazza.
+
+Disclaimer: in the process of constructing feedback, I recorded my audio and got AI to rephrase my feedback in a concise, clear manner so that I can mark faster + you get more detailed feedback. I did not run any of the assignments through AI.
+
+Survey introduction
+You state that responses will be completely anonymous. Please avoid that wording, because it does not accurately describe how the responses are handled. It is enough to say that you will not collect names, student numbers, or email addresses.
+
+Gift card and email addresses
+Please do not collect email addresses in your survey. Instead, randomly select course-specific IDs on your end and send them to me, and I will administer the prizes. This avoids anyone accidentally committing email addresses to GitHub, and it keeps your data more anonymous.
+
+Typo
+In the CGPA question, "prefer not to say" is misspelled ("prefer" is spelled incorrectly). Please fix it.
+
+Commute time
+Please do not give ranges for how long it takes students to commute to school. Ask them to type in a number instead. This gives you more variety in your results and a larger range of values, so you do not have to work with the midpoint of each interval.
+
+Agreement scale wording
+The question about whether you have to know a person well to study with them uses a strongly agree to strongly disagree scale. That scale works with a statement, not a question. Please reword it as a statement, for example "I need to know a person well to study with them."
+Your scale also runs from 1 to 5. Please widen it to 1 to 7 by adding "slightly agree" and "slightly disagree."
+
+(-0.15 for questionnaire design)
+
+0.85/1
+
