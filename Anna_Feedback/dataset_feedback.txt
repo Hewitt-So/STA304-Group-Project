@@ -1,0 +1,5 @@
+GPA codebook
+Your GPA variable is coded as 0 through 5, where 0 represents a range of 4.0 to 3.7 and 5 means not disclosed. If you treat this as a numeric variable, 5 would be read as a higher or "worse" value than something like 2, even though it just means the GPA was not given. Please do not code "not disclosed" as a number at all. Use NA instead.
+For the actual GPA ranges, please recode each one to its midpoint rather than an arbitrary integer. For example, a GPA range of 4.0 to 3.7 should be coded as 3.85, not 0. This will make your numerical analysis much easier to interpret.
+
+1/1
