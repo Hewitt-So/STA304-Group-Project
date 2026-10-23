@@ -1,5 +1,25 @@
 ---
-title: "Data Analysis"
-format: html
+title: "STA304 Exploratory Data Analysis on Student Preferences on Group and Individual Study"
+format:
+  pdf:
+    documentclass: article
+    geometry: "margin=1in"
+    titlepage: true
+    titlepage-color: "FFFFFF"
+    titlepage-text-color: "000000"
+    titlepage-rule-height: 2
+header-includes:
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  - \DefineVerbatimEnvironment{OutputCode}{Verbatim}{breaklines,commandchars=\\\{\}}
 ---
 
+```{r}
+library(tidyverse)
+library(easystats)
+library(knitr)
+
+df <- read.csv("Dataset.csv")
+```
+
+---
