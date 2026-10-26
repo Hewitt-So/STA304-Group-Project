@@ -1,5 +1,6 @@
 ---
 title: "STA304 Exploratory Data Analysis on Student Preferences on Group and Individual Study"
+author: "Group 30"
 format:
   pdf:
     documentclass: article
@@ -13,13 +14,655 @@ header-includes:
   - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
   - \DefineVerbatimEnvironment{OutputCode}{Verbatim}{breaklines,commandchars=\\\{\}}
 ---
-
+<!-- Summary Statistics Section by Allen -->
+# Summary Statistics
 ```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
 library(tidyverse)
 library(easystats)
+library(dplyr)
 library(knitr)
 
-df <- read.csv("Dataset.csv")
+# Load data and clean spaces from column names
+df <- read.csv(
+  "Dataset.csv",
+  na.strings = c("NA", "N/A", ""),
+  check.names = FALSE
+)
+
+names(df) <- trimws(names(df))
+df <- df[, !is.na(names(df)) & names(df) != "", drop = FALSE]
+
+# Select numerical variables and give them readable labels
+numerical_data <- df |>
+  transmute(
+    `One-way commute (minutes)` = commute_time,
+    `Need to know study partners well (1–7)` = know_well,
+    `Choose group study for difficult topics (1–7)` = group_difficult,
+    `Approximate CGPA` = cgpa
+  )
+
+# Calculate summary statistics
+summary_table <- datawizard::describe_distribution(
+  numerical_data,
+  centrality = c("mean", "median")
+) |>
+  as.data.frame() |>
+  dplyr::select(Variable, n, n_Missing, Mean, Median, SD, IQR) |>
+  dplyr::rename(
+    `Valid responses` = n,
+    Missing = n_Missing
+  )
+
+# Display the table
+knitr::kable(
+  summary_table,
+  digits = 2,
+  caption = "Summary statistics for numerical variables and agreement ratings."
+)
 ```
 
----
+Among the 84 respondents, the mean one-way commute was 33.21 minutes (SD = 24.28), with a median of 30 minutes. Respondents generally agreed that they needed to know someone well before studying together, with a median agreement score of 6 out of 7. Furthermore, agreement with choosing group study for difficult topics had a median of 4.5 and an IQR of 4, indicating that there is a variation in responses. In addition, the approximate CGPA averaged 2.34 among 75 respondents; nine respondents did not disclose their CGPA.Therefore, these CGPA values represent numerical approximations of reported GPA ranges.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+preference_vars <- c(
+  "preferred_method", "learning_new_concepts",
+  "solving_problems", "readings", "reviewing"
+)
+
+# Select categorical variables, excluding student identifiers
+categorical_data <- df |>
+  select(where(is.character), -studentID) |>
+  mutate(
+    across(
+      all_of(preference_vars),
+      ~ factor(
+        .x,
+        levels = c("G", "I", "N"),
+        labels = c("Group study", "Individual study", "No preference")
+      )
+    ),
+    gender = factor(
+      gender,
+      levels = c("M", "F", "O"),
+      labels = c("Male", "Female", "Other")
+    ),
+    across(
+      c(campus, starts_with("ethnicity_"), domestic),
+      ~ factor(.x, levels = c("Y", "N"), labels = c("Yes", "No"))
+    )
+  ) |>
+  rename_with(~ stringr::str_to_title(gsub("_", " ", .x))) |>
+  rename("Assigned Readings" = Readings) |>
+  rename("Lived On Campus" = Campus)
+
+
+# Display counts and percentages
+datawizard::data_tabulate(
+  categorical_data,
+  metrics = c("N", "raw", "valid")
+) |>
+  insight::print_md()
+```
+
+Among the 84 respondents, 65 (77.38%) preferred individual study overall, compared with 19 (22.62%) who preferred group study. Group study was more commonly preferred for solving practice problems (46.43%) than for completing readings (9.52%). The sample included 41 male respondents (48.81%), 38 female respondents (45.24%), and five respondents identifying as other (5.95%). Furthermore, 50 respondents (59.52%) were domestic students. Notice that ethnicity indicators were recorded separately, so percentages across ethnicities need not sum to 100%.
+
+<!-- Statistical Tests Section by Eric -->
+```{r}
+#| include: false
+library(report)
+
+# Read straight from the raw Google Forms export (never modified).
+d <- read.csv("Dataset.csv", check.names = FALSE)
+
+# Tidy up: trim whitespace (one column name has a trailing space) and
+# drop the empty first column (the row index).
+names(d) <- trimws(names(d))
+if (names(d)[1] == "") d <- d[-1]
+d <- d |> mutate(across(where(is.character), trimws))
+
+# Recode to readable levels.
+lvl_method <- c(Group = "G", Individual = "I", `No preference` = "N")
+lvl_yn     <- c(Yes = "Y", No = "N")
+d <- d |>
+  mutate(
+    preferred_method = factor(preferred_method, levels = lvl_method,
+                              labels = names(lvl_method)),
+    gender           = factor(gender, levels = c(M = "M", F = "F", O = "O"),
+                              labels = c("Male", "Female", "Other")),
+    campus           = factor(campus, levels = lvl_yn, labels = names(lvl_yn)),
+    domestic         = factor(domestic, levels = lvl_yn, labels = names(lvl_yn)),
+    across(c(learning_new_concepts, solving_problems, readings, reviewing),
+           ~ factor(.x, levels = lvl_method, labels = names(lvl_method))),
+    # cgpa holds the midpoint of the chosen GPA range; "N/A" -> missing
+    cgpa             = suppressWarnings(as.numeric(cgpa)),
+    # 1-7 Likert agreement scales
+    know_well        = as.numeric(know_well),
+    group_difficult  = as.numeric(group_difficult),
+    # binary indicator for the logistic regressions (Group = 1, Individual = 0)
+    group_binary     = if_else(preferred_method == "Group", 1, 0)
+  ) |>
+  droplevels()   # drop unused levels (nobody chose "No preference" overall)
+```
+
+# Plots and Tables
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| fig-cap: >
+#|   Bar graph of the number of students who prefer group study compared to students who prefer individual study.
+#|   Clearly, the proportion of students who overall, prefer individual study is greater than the proportion of students who do not.
+library(tidyverse)
+library(readxl)
+library(easystats)
+raw_input <- "GGGGGGGGGGGGGGGGGGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+my_data <- unlist(strsplit(raw_input, ""))
+counts <- table(my_data)
+
+df_prop <- as.data.frame(counts)
+ggplot(df_prop, aes(x = my_data, y = Freq, fill = my_data)) +
+  geom_col(color = "white", width = 0.5, alpha = 1) +
+  scale_x_discrete(labels = c("G" = "Group Study", "I" = "Individual Study")) +
+  scale_fill_manual(values = c("G" = "#0000FF", "I" = "#FF0000")) +
+  geom_text(aes(label = paste0(Freq, " (", round(Freq/sum(Freq)*100, 1), "%)")), vjust = -0.5, fontface = "bold") +
+  labs(title = "Overall Study Preference Baseline", x = "Study Preference", y = "Number of Students") +
+  theme_minimal() +
+  scale_y_continuous(expand = expansion(mult = c(0,0.15))) +
+  theme(legend.position = "none", plot.title = element_text(face = "bold", size = 14))
+```
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| fig-cap: >
+#|   The table shows the counts for the number of students who prefered group versus individual study for various activities, where % of Original G is trying to show the proportion of students who initially preferred group study overall that also preferred the method for a specific activity (the same goes for % of Original I). While generally, students seem to prefer individual study for most tasks, they tend to stick to their overall preference of study more than 50% of the time, with the exception of doing readings.
+learning_input <-"GNGGGGGIIIIIIGGGGGIGIIIIIIIIIIIIIIIIIIIIIGGIIIIIINGGGIIIIIIIIIIIIIIIIIIIIIIIIGIIINII"
+solving_input <- "GGGGGGGGGGGGGIGGIIGGGGGGGGGGIIIIIIIINGGGGIGGGGGGGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIGGNI"
+readings_input <-"GGIIIIIIIIIIIINIIGIIIIIIIIIIIIIIIIIIINGGGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIINNGIIIN"
+review_input <- "GGGGGGGGGGGGGGGIINNGGGGGGGGGGGGGGGGGGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIINNNNN"
+learning_data <- unlist(strsplit(learning_input, ""))
+solving_data <- unlist(strsplit(solving_input, ""))
+readings_data <- unlist(strsplit(readings_input, ""))
+review_data <- unlist(strsplit(review_input, ""))
+contingency_table <- rbind(
+  learning_new_concepts = table(learning_data),
+  solving_problems = table(solving_data),
+  readings = table(readings_data),
+  reviewing = table(review_data)
+)
+total_g_overall <- sum(my_data == "G")
+g_of_g_learn <- sum(my_data == "G" & learning_data == "G")
+g_of_g_solve <- sum(my_data == "G" & solving_data == "G")
+g_of_g_read <- sum(my_data == "G" & readings_data == "G")
+g_of_g_rev <- sum(my_data == "G" & review_data == "G")
+g_overall_pcts <- c(
+  learning_pct = (g_of_g_learn / total_g_overall) * 100,
+  solving_pct = (g_of_g_solve / total_g_overall) * 100,
+  readings_pct = (g_of_g_read / total_g_overall) * 100,
+  reviewing_pct = (g_of_g_rev / total_g_overall) * 100
+)
+total_i_overall <- sum(my_data == "I")
+i_of_i_learn <- sum(my_data == "I" & learning_data == "I")
+i_of_i_solve <- sum(my_data == "I" & solving_data == "I")
+i_of_i_read <- sum(my_data == "I" & readings_data == "I")
+i_of_i_rev <- sum(my_data == "I" & review_data == "I")
+i_overall_pcts <- c(
+  learning_pct = (i_of_i_learn / total_i_overall) * 100,
+  solving_pct = (i_of_i_solve / total_i_overall) * 100,
+  readings_pct = (i_of_i_read / total_i_overall) * 100,
+  reviewing_pct = (i_of_i_rev / total_i_overall) * 100
+)
+contingency_table <- cbind(
+  contingency_table, 
+  `% of Original G` = round(g_overall_pcts, 1),
+  `% of Original I` = round(i_overall_pcts, 1))
+rownames(contingency_table) <- c("Learning New Concepts", "Solving Problems", "Assigned Readings", "Reviewing")
+colnames(contingency_table) <- c("Group", "Individual", "No Response", "% of Original G", "% of Original I")
+knitr::kable(
+  contingency_table,
+  caption = "Response Counts and Percentages by Study Activity",
+  align = "c",
+  digits = 1
+)
+```
+
+# Checking Model Assumptions
+
+Before interpreting the statistical inference tests for RQ1 and RQ2, we verify whether the underlying statistical assumptions for our tests have been satisfied.
+
+## RQ1: One-Sample Binomial Test Assumptions
+The one-sample exact binomial test evaluating whether the proportion of students preferring group study differs from $p = 0.5$ relies on two primary assumptions:\
+1. **Independence:** Each student's survey response must be independent of others. This is satisfied by our sampling methodology (independent online submissions via Piazza).\
+2. **Fixed Trials and Binary Success:** The outcome is binary (Group vs. Individual study preference) with a fixed sample size ($n = 84$). Both conditions are fully satisfied.
+
+## RQ2: Chi-Squared Test of Independence Assumptions
+To assess whether activity-specific study preferences depend on a student's overall study preference, Chi-squared tests of independence were conducted. The assumptions for these tests include:\
+1. **Categorical Variables:** Both overall study preference and activity-specific preferences are categorical factors, which is satisfied.\
+2. **Independence:** Observations are independent.\
+3. **Adequate Expected Frequencies:** Standard statistical theory requires that expected cell counts in contingency tables should be at least $5$. \
+
+Analyzing the expected frequencies for our contingency tables, an assumption violation is observed. Due to the near-zero frequency of students selecting "No preference" overall, several contingency table cells have expected counts well below $5$ (with minimum expected frequencies ranging between $0.45$ and $1.58$ across the activity models). 
+
+Following course guidelines regarding assumption violations in applied survey data, we acknowledge that the asymptotic Chi-squared approximation is imperfect due to table sparsity in the "No preference" category. However, we proceed with the analysis as structured, noting that the primary statistical conclusions are driven by the strong contrast between Group and Individual study preferences where cell counts are fully adequate.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| label: check-model-assumptions-rq2
+#| tbl-cap: "Minimum expected cell counts for Chi-squared tests across activities."
+
+library(tidyverse)
+library(knitr)
+
+d1 <- read.csv("Dataset.csv", check.names = FALSE)
+names(d1) <- trimws(names(d1))
+
+activities <- c("learning_new_concepts", "solving_problems", "readings", "reviewing")
+activity_labels <- c("Learning New Concepts", "Solving Practice Problems", 
+                     "Completing Assigned Readings", "Reviewing for Tests/Exams")
+
+expected_freq_list <- list()
+
+for (i in seq_along(activities)) {
+  ct <- table(d1[[activities[i]]], d1[, "preferred_method"])
+  chi_res <- chisq.test(ct)
+  expected_freq_list[[activity_labels[i]]] <- chi_res[["expected"]]
+}
+
+min_expected_df <- data.frame(
+  "Study Activity" = activity_labels,
+  "Minimum Expected Cell Frequency" = round(sapply(expected_freq_list, min), 2),
+  check.names = FALSE
+)
+
+kable(min_expected_df, 
+      align = "lc", 
+      booktabs = TRUE)
+```
+
+# Computing Statistical Tests
+
+All results are produced with the `report` package from the
+[easystats](https://easystats.github.io/easystats/) universe. Significance is
+evaluated at the $\alpha = 0.05$ level.
+
+## RQ1 — One-sample proportion test
+
+Of the 84 respondents, 19 stated that they prefer **group study** overall and 65
+stated that they prefer **individual study** (nobody selected "no preference" as
+their overall method). We test whether the proportion preferring group study
+differs from 0.5.
+
+```{r}
+#| echo: false
+#| warning: false
+#| tbl-cap: "One-sample exact binomial test of the proportion of students preferring group study (RQ1)."
+n_group <- sum(d$preferred_method == "Group")
+n_total <- nrow(d)
+bt <- binom.test(x = n_group, n = n_total, p = 0.5)
+
+rq1_tab <- data.frame(
+  `Students preferring group study` = n_group,
+  `Students preferring individual study` = n_total - n_group,
+  `Sample proportion (group)` = round(n_group / n_total, 3),
+  `95% CI for p` = sprintf("(%.3f, %.3f)", bt$conf.int[1], bt$conf.int[2]),
+  `p-value (H0: p = 0.5)` = format.pval(bt$p.value, digits = 3),
+  check.names = FALSE
+)
+kable(rq1_tab, align = "c", booktabs = TRUE)
+```
+
+The proportion preferring group study is estimated at 22.6% with a 95%
+confidence interval of (0.142, 0.330). The test rejects the null hypothesis of
+$p = 0.5$ ($p < 0.001$). The effect is **directional**: significantly *fewer*
+than half of STA304H5F students prefer group study over individual study — the
+large majority prefer studying individually.
+
+## RQ2 — Does preference depend on the activity?
+
+We cross-tabulate the overall preference (group vs. individual) with the stated
+preference for each of the four study activities. The table below gives the
+counts, and the chi-squared test of independence is computed for each activity.
+
+```{r}
+#| echo: false
+#| warning: false
+#| tbl-cap: "Preference for each study activity, split by the student's overall preference for group vs. individual study."
+activities <- c("learning_new_concepts", "solving_problems", "readings", "reviewing")
+activity_labels <- c("learning new concepts", "solving practice problems",
+                     "completing assigned readings", "reviewing for tests/exams")
+
+activity_table <- do.call(rbind, lapply(seq_along(activities), function(i) {
+  tb <- table(d[[activities[i]]], d$preferred_method)
+  data.frame(Activity = activity_labels[i],
+             `Activity preference` = rownames(tb),
+             `Overall: group` = as.integer(tb[, "Group"]),
+             `Overall: individual` = as.integer(tb[, "Individual"]),
+             check.names = FALSE)
+}))
+kable(activity_table, align = "llcc", booktabs = TRUE)
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| results: asis
+out <- c()
+for (i in seq_along(activities)) {
+  ct <- chisq.test(table(d[[activities[i]]], d$preferred_method))
+  txt <- as.character(report(ct))
+  txt <- gsub("between\\s+and\\s+", "between the two study-preference variables ", txt)
+  out <- c(out, paste0("**Preference when ", activity_labels[i], ":**"), "", txt, "")
+}
+cat(paste(out, collapse = "\n"))
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| include: false
+# counts for the interpretation paragraph
+for (v in activities) print(table(d[[v]], d$preferred_method))
+```
+
+The association between the overall preference and the activity-specific
+preference is **statistically significant and large** for three of the four
+activities: learning new concepts, solving practice problems, and reviewing for tests/exams. 
+For completing assigned readings the association is **not significant**,
+meaning preference for readings does not depend on the student's
+overall group/individual preference.
+
+The direction of the significant associations is consistent: students who
+prefer group study overall are far more likely to also choose group study for
+these activities, and students who prefer individual study overwhelmingly
+choose individual work — for example, 16 of the 19 group-preferring students
+chose group study for solving problems, while 56 of 65 individual-preferring
+students chose individual study for learning new concepts. In other words, the
+group/individual preference is **activity-consistent** rather than
+activity-dependent: the pattern reflects students sticking to their overall
+preference across activities. One caveat: the "no preference" rows are sparse,
+so the chi-squared approximation is approximate for these tables; the
+conclusions above are driven by the group-vs-individual contrast.
+
+
+# Appendix
+```{r}
+#| eval: false
+
+library(tidyverse)
+library(easystats)
+library(dplyr)
+library(knitr)
+
+# Load data and clean spaces from column names
+df <- read.csv(
+  "Dataset.csv",
+  na.strings = c("NA", "N/A", ""),
+  check.names = FALSE
+)
+
+names(df) <- trimws(names(df))
+df <- df[, !is.na(names(df)) & names(df) != "", drop = FALSE]
+
+# Select numerical variables and give them readable labels
+numerical_data <- df |>
+  transmute(
+    `One-way commute (minutes)` = commute_time,
+    `Need to know study partners well (1–7)` = know_well,
+    `Choose group study for difficult topics (1–7)` = group_difficult,
+    `Approximate CGPA` = cgpa
+  )
+
+# Calculate summary statistics
+summary_table <- datawizard::describe_distribution(
+  numerical_data,
+  centrality = c("mean", "median")
+) |>
+  as.data.frame() |>
+  dplyr::select(Variable, n, n_Missing, Mean, Median, SD, IQR) |>
+  dplyr::rename(
+    `Valid responses` = n,
+    Missing = n_Missing
+  )
+
+# Display the table
+knitr::kable(
+  summary_table,
+  digits = 2,
+  caption = "Summary statistics for numerical variables and agreement ratings."
+)
+
+preference_vars <- c(
+  "preferred_method", "learning_new_concepts",
+  "solving_problems", "readings", "reviewing"
+)
+
+# Select categorical variables, excluding student identifiers
+categorical_data <- df |>
+  select(where(is.character), -studentID) |>
+  mutate(
+    across(
+      all_of(preference_vars),
+      ~ factor(
+        .x,
+        levels = c("G", "I", "N"),
+        labels = c("Group study", "Individual study", "No preference")
+      )
+    ),
+    gender = factor(
+      gender,
+      levels = c("M", "F", "O"),
+      labels = c("Male", "Female", "Other")
+    ),
+    across(
+      c(campus, starts_with("ethnicity_"), domestic),
+      ~ factor(.x, levels = c("Y", "N"), labels = c("Yes", "No"))
+    )
+  ) |>
+  rename_with(~ stringr::str_to_title(gsub("_", " ", .x))) |>
+  rename("Assigned Readings" = Readings) |>
+  rename("Lived On Campus" = Campus)
+
+  
+# Display counts and percentages
+datawizard::data_tabulate(
+  categorical_data,
+  metrics = c("N", "raw", "valid")
+) |>
+  insight::print_md()
+
+
+#| fig-align: center
+#| fig-cap: >
+#|   Bar graph of the number of students who prefer group study compared to students who prefer individual study.
+#|   Clearly, the proportion of students who overall, prefer individual study is greater than the proportion of students who do not.
+library(tidyverse)
+library(readxl)
+library(easystats)
+raw_input <- "GGGGGGGGGGGGGGGGGGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+my_data <- unlist(strsplit(raw_input, ""))
+counts <- table(my_data)
+
+df_prop <- as.data.frame(counts)
+ggplot(df_prop, aes(x = my_data, y = Freq, fill = my_data)) +
+  geom_col(color = "white", width = 0.5, alpha = 1) +
+  scale_x_discrete(labels = c("G" = "Group Study", "I" = "Individual Study")) +
+  scale_fill_manual(values = c("G" = "#0000FF", "I" = "#FF0000")) +
+  geom_text(aes(label = paste0(Freq, " (", round(Freq/sum(Freq)*100, 1), "%)")), vjust = -0.5, fontface = "bold") +
+  labs(title = "Overall Study Preference Baseline", x = "Study Preference", y = "Number of Students") +
+  theme_minimal() +
+  scale_y_continuous(expand = expansion(mult = c(0,0.15))) +
+  theme(legend.position = "none", plot.title = element_text(face = "bold", size = 14))
+#| fig-align: center
+#| fig-cap: >
+#|   The table shows the counts for the number of students who prefered group versus individual study for various activities, where % of Original G is trying to show the proportion of students who initially preferred group study overall that also preferred the method for a specific activity (the same goes for % of Original I). While generally, students seem to prefer individual study for most tasks, they tend to stick to their overall preference of study more than 50% of the time, with the exception of doing readings.
+learning_input <-"GNGGGGGIIIIIIGGGGGIGIIIIIIIIIIIIIIIIIIIIIGGIIIIIINGGGIIIIIIIIIIIIIIIIIIIIIIIIGIIINII"
+solving_input <- "GGGGGGGGGGGGGIGGIIGGGGGGGGGGIIIIIIIINGGGGIGGGGGGGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIGGNI"
+readings_input <-"GGIIIIIIIIIIIINIIGIIIIIIIIIIIIIIIIIIINGGGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIINNGIIIN"
+review_input <- "GGGGGGGGGGGGGGGIINNGGGGGGGGGGGGGGGGGGGIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIINNNNN"
+learning_data <- unlist(strsplit(learning_input, ""))
+solving_data <- unlist(strsplit(solving_input, ""))
+readings_data <- unlist(strsplit(readings_input, ""))
+review_data <- unlist(strsplit(review_input, ""))
+contingency_table <- rbind(
+  learning_new_concepts = table(learning_data),
+  solving_problems = table(solving_data),
+  readings = table(readings_data),
+  reviewing = table(review_data)
+)
+total_g_overall <- sum(my_data == "G")
+g_of_g_learn <- sum(my_data == "G" & learning_data == "G")
+g_of_g_solve <- sum(my_data == "G" & solving_data == "G")
+g_of_g_read <- sum(my_data == "G" & readings_data == "G")
+g_of_g_rev <- sum(my_data == "G" & review_data == "G")
+g_overall_pcts <- c(
+  learning_pct = (g_of_g_learn / total_g_overall) * 100,
+  solving_pct = (g_of_g_solve / total_g_overall) * 100,
+  readings_pct = (g_of_g_read / total_g_overall) * 100,
+  reviewing_pct = (g_of_g_rev / total_g_overall) * 100
+)
+total_i_overall <- sum(my_data == "I")
+i_of_i_learn <- sum(my_data == "I" & learning_data == "I")
+i_of_i_solve <- sum(my_data == "I" & solving_data == "I")
+i_of_i_read <- sum(my_data == "I" & readings_data == "I")
+i_of_i_rev <- sum(my_data == "I" & review_data == "I")
+i_overall_pcts <- c(
+  learning_pct = (i_of_i_learn / total_i_overall) * 100,
+  solving_pct = (i_of_i_solve / total_i_overall) * 100,
+  readings_pct = (i_of_i_read / total_i_overall) * 100,
+  reviewing_pct = (i_of_i_rev / total_i_overall) * 100
+)
+contingency_table <- cbind(
+  contingency_table, 
+  `% of Original G` = round(g_overall_pcts, 1),
+  `% of Original I` = round(i_overall_pcts, 1))
+rownames(contingency_table) <- c("Learning New Concepts", "Solving Problems", "Assigned Readings", "Reviewing")
+colnames(contingency_table) <- c("Group", "Individual", "No Response", "% of Original G", "% of Original I")
+knitr::kable(
+  contingency_table,
+  caption = "Response Counts and Percentages by Study Activity",
+  align = "c",
+  digits = 1
+)
+
+
+#| label: check-model-assumptions-rq2
+#| tbl-cap: "Minimum expected cell counts for Chi-squared tests across activities."
+
+library(tidyverse)
+library(knitr)
+
+d1 <- read.csv("Dataset.csv", check.names = FALSE)
+names(d1) <- trimws(names(d1))
+
+activities <- c("learning_new_concepts", "solving_problems", "readings", "reviewing")
+activity_labels <- c("Learning New Concepts", "Solving Practice Problems", 
+                     "Completing Assigned Readings", "Reviewing for Tests/Exams")
+
+expected_freq_list <- list()
+
+for (i in seq_along(activities)) {
+  ct <- table(d1[[activities[i]]], d1[, "preferred_method"])
+  chi_res <- chisq.test(ct)
+  expected_freq_list[[activity_labels[i]]] <- chi_res[["expected"]]
+}
+
+min_expected_df <- data.frame(
+  "Study Activity" = activity_labels,
+  "Minimum Expected Cell Frequency" = round(sapply(expected_freq_list, min), 2),
+  check.names = FALSE
+)
+
+kable(min_expected_df, 
+      align = "lc", 
+      booktabs = TRUE)
+
+# Read straight from the raw Google Forms export (never modified).
+d <- read.csv("Dataset.csv", check.names = FALSE)
+
+# Tidy up: trim whitespace (one column name has a trailing space) and
+# drop the empty first column (the row index).
+names(d) <- trimws(names(d))
+if (names(d)[1] == "") d <- d[-1]
+d <- d |> mutate(across(where(is.character), trimws))
+
+# Recode to readable levels.
+lvl_method <- c(Group = "G", Individual = "I", `No preference` = "N")
+lvl_yn     <- c(Yes = "Y", No = "N")
+d <- d |>
+  mutate(
+    preferred_method = factor(preferred_method, levels = lvl_method,
+                              labels = names(lvl_method)),
+    gender           = factor(gender, levels = c(M = "M", F = "F", O = "O"),
+                              labels = c("Male", "Female", "Other")),
+    campus           = factor(campus, levels = lvl_yn, labels = names(lvl_yn)),
+    domestic         = factor(domestic, levels = lvl_yn, labels = names(lvl_yn)),
+    across(c(learning_new_concepts, solving_problems, readings, reviewing),
+           ~ factor(.x, levels = lvl_method, labels = names(lvl_method))),
+    # cgpa holds the midpoint of the chosen GPA range; "N/A" -> missing
+    cgpa             = suppressWarnings(as.numeric(cgpa)),
+    # 1-7 Likert agreement scales
+    know_well        = as.numeric(know_well),
+    group_difficult  = as.numeric(group_difficult),
+    # binary indicator for the logistic regressions (Group = 1, Individual = 0)
+    group_binary     = if_else(preferred_method == "Group", 1, 0)
+  ) |>
+  droplevels()   # drop unused levels (nobody chose "No preference" overall)
+
+#| tbl-cap: "One-sample exact binomial test of the proportion of students preferring group study (RQ1)."
+n_group <- sum(d$preferred_method == "Group")
+n_total <- nrow(d)
+bt <- binom.test(x = n_group, n = n_total, p = 0.5)
+
+rq1_tab <- data.frame(
+  `Students preferring group study` = n_group,
+  `Students preferring individual study` = n_total - n_group,
+  `Sample proportion (group)` = round(n_group / n_total, 3),
+  `95% CI for p` = sprintf("(%.3f, %.3f)", bt$conf.int[1], bt$conf.int[2]),
+  `p-value (H0: p = 0.5)` = format.pval(bt$p.value, digits = 3),
+  check.names = FALSE
+)
+kable(rq1_tab, align = "c", booktabs = TRUE)
+
+#| tbl-cap: "Preference for each study activity, split by the student's overall preference for group vs. individual study."
+activities <- c("learning_new_concepts", "solving_problems", "readings", "reviewing")
+activity_labels <- c("learning new concepts", "solving practice problems",
+                     "completing assigned readings", "reviewing for tests/exams")
+
+activity_table <- do.call(rbind, lapply(seq_along(activities), function(i) {
+  tb <- table(d[[activities[i]]], d$preferred_method)
+  data.frame(Activity = activity_labels[i],
+             `Activity preference` = rownames(tb),
+             `Overall: group` = as.integer(tb[, "Group"]),
+             `Overall: individual` = as.integer(tb[, "Individual"]),
+             check.names = FALSE)
+}))
+kable(activity_table, align = "llcc", booktabs = TRUE)
+#| results: asis
+out <- c()
+for (i in seq_along(activities)) {
+  ct <- chisq.test(table(d[[activities[i]]], d$preferred_method))
+  txt <- as.character(report(ct))
+  txt <- gsub("between\\s+and\\s+", "between the two study-preference variables ", txt)
+  out <- c(out, paste0("**Preference when ", activity_labels[i], ":**"), "", txt, "")
+}
+cat(paste(out, collapse = "\n"))
+# counts for the interpretation paragraph
+for (v in activities) print(table(d[[v]], d$preferred_method))
+```
+
+
