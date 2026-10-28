@@ -1,0 +1,31 @@
+STA304 Exploratory Data Analysis Feedback
+
+Overall, this report feels quite empty and left me wanting more.
+
+Disclaimer: in the process of constructing feedback, I recorded my audio and got AI to rephrase my feedback in a concise, clear manner so that I can mark faster + you get more detailed feedback. I did not run any of the assignments through AI.
+
+Missing analyses
+
+Your proposal said you would do logistic regression or multiple linear regression. The multiple linear regression makes a bit less sense, but your summary statistics show other characteristics you could analyze, such as commute and GPA. In this report you did not do either of those advanced tests. You only did a simple proportion test and a chi-square test, so the report is incomplete compared with what you proposed.
+
+Assumptions for the one-sample binomial test
+
+For the one-sample binomial test in RQ1, you list fixed trials and binary success as the assumptions. Those make sense, but there is one more check. For the normal approximation, np should be at least 5 and n(1-p) should be at least 5, where p is the hypothesized proportion. I would have accepted a numerical check of either condition, but you did not check them.
+
+Chi-square test
+
+I know you can proceed with the chi-square test of independence as if the assumption were not violated. There is an easy alternative, though, which is Fisher's exact test. I would prefer you use it.
+
+Reporting with report::report()
+
+I see you used report::report(), which I recommended in my document. It gives a nice rough draft, but you probably noticed that a lot of the text is repetitive, and you could have condensed it. For example, the output says effect sizes were labelled following Funder's (2019) recommendations. If you want to keep that sentence, elaborate on what those recommendations are. Your results include some significant effects and some that are not, and it is fine to report which is which. When the text is nearly the same each time, though, readers skim it faster, so some editing to make it less repetitive would be easier to read.
+
+Grade breakdown
+
+Checking Model Assumptions (0.35 / 0.4)
+Interpretation of whether the assumptions were violated (0.05 / 0.1). I deducted 0.05 because the assumption check for the binomial test left out the sample size conditions for np and n(1-p). Additionally, if you did the other tests you planned, you would have been doing more model checks and assumptions.
+
+Computing Statistical Tests (0.25 / 0.4)
+Appropriate test or model computed and reported (0.10 / 0.25). I deducted 0.15 because your proposal planned logistic regression or multiple linear regression, but the report only has a proportion test and a chi-square test.
+
+Total (1.80 / 2)
